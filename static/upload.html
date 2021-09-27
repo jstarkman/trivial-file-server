@@ -1,11 +1,12 @@
 <!doctype html>
 <html>
 <head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <style>
 form.aligned-form {
 	display: grid;
 	grid-template-columns: max-content max-content;
-	gap: 5px;
+	gap: 10px;
 }
 form.aligned-form label {
 	text-align: right;
@@ -15,12 +16,30 @@ form.aligned-form label {
 
 <body>
 <h1>Upload file here</h1>
-<form method="POST" action="/api/upload" enctype="multipart/form-data" class="aligned-form">
+<form id="form-upload" enctype="multipart/form-data" class="aligned-form">
 	<label for="identifier">Identifier</label>
 	<input type="text" name="identifier"/>
 	<label for="f">File to upload</label>
 	<input type="file" name="f" >
-	<input type="submit" value="Upload"/>
+	<div style="text-align: center; grid-column: 1 / 3;">
+		<input type="submit" value="Upload" style="display: inline-block;"/>
+	</div>
 </form>
+<div id="status"></div>
+
+<script>
+function submitForm(endpoint, outID, event) {
+	var out = document.getElementById(outID);
+	var req = new XMLHttpRequest();
+	req.open("POST", endpoint, true);
+	req.onload = _ => out.innerText = req.responseText;
+	req.onerror = _ => out.innerText = "Failed to submit the form.";
+	req.send(new FormData(event.target));
+	event.preventDefault();
+}
+
+document.getElementById("form-upload")
+	.addEventListener("submit", ev => submitForm("/api/upload", "status", ev));
+</script>
 </body>
 </html>

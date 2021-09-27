@@ -1,6 +1,6 @@
 use actix_multipart::Multipart;
 use actix_web as aw;
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, info};
 use serde::Deserialize;
@@ -17,10 +17,39 @@ async fn hello(inputs: web::Path<HelloInputs>) -> impl Responder {
 	HttpResponse::Ok().body(format!("Hello, {}!", inputs.name))
 }
 
+#[get("/upload/{id}")]
+async fn upload_get(id: web::Path<String>) -> Result<HttpResponse, aw::Error> {
+	// FIXME should store/recover filename/MIME somehow; proper DB?
+	use actix_http::error::ErrorBadRequest;
+	use std::path::Path;
+	let uuid: Uuid = Uuid::parse_str(&id).map_err(ErrorBadRequest)?;
+	// FIXME this should go in application state/config; live env lookup could be expensive
+	let tfs_upload = std::env::var("TFS_UPLOAD").unwrap_or("./upload".to_string());
+	let read_from_here = Path::new(&tfs_upload).join(uuid.to_hyphenated().to_string());
+	// FIXME stream this
+	let data = std::fs::read(read_from_here).map_err(ErrorBadRequest)?;
+	Ok(HttpResponse::Ok()
+		// content-type would go here
+		.body(data))
+}
+
+#[delete("/upload/{id}")]
+async fn upload_delete(id: web::Path<String>) -> Result<HttpResponse, aw::Error> {
+	// FIXME should store/recover filename/MIME somehow; proper DB?
+	use actix_http::error::ErrorBadRequest;
+	use std::path::Path;
+	let uuid: Uuid = Uuid::parse_str(&id).map_err(ErrorBadRequest)?;
+	// FIXME this should go in application state/config; live env lookup could be expensive
+	let tfs_upload = std::env::var("TFS_UPLOAD").unwrap_or("./upload".to_string());
+	let delete_me = Path::new(&tfs_upload).join(uuid.to_hyphenated().to_string());
+	std::fs::remove_file(delete_me).map_err(ErrorBadRequest)?;
+	Ok(HttpResponse::NoContent().finish())
+}
+
 /// Assumes MIME of "multipart/form-data" with names of "identifier" and "f".
 /// @see https://github.com/actix/examples/blob/master/forms/multipart/src/main.rs
 #[post("/upload")]
-async fn upload(mut multipart: Multipart) -> Result<HttpResponse, aw::Error> {
+async fn upload_post(mut multipart: Multipart) -> Result<HttpResponse, aw::Error> {
 	use actix_http::error::ErrorBadRequest;
 	let mut identifier: Option<String> = None;
 	let mut filename: Option<String> = None;
@@ -59,10 +88,11 @@ async fn upload(mut multipart: Multipart) -> Result<HttpResponse, aw::Error> {
 				"Someone uploaded '{}' to '{}'; original filename was '{}'",
 				id, fpath, fname
 			);
-			Ok(aw::HttpResponse::Found()
+			let loc = format!("/api/upload/{}", fpath);
+			Ok(HttpResponse::Created()
 				// FIXME deprecated; will change in actix-web >= 4.0.0
-				.header(aw::http::header::LOCATION, "/static/upload.html")
-				.body(""))
+				.header(aw::http::header::LOCATION, loc.to_string())
+				.body(format!("Uploaded to {}", loc)))
 		}
 		_ => Ok(HttpResponse::from_error(ErrorBadRequest(
 			"Incomplete form.",
@@ -92,8 +122,6 @@ async fn stream_to_file(mut field: actix_multipart::Field) -> Result<String, aw:
 async fn main() -> std::io::Result<()> {
 	dotenv::dotenv().ok();
 	env_logger::builder().format_timestamp_millis().init();
-	let user = std::env::var("CONFIGURED_USER").unwrap_or("unknown user".to_string());
-	info!("Hello, {}!", user);
 
 	let static_files_root = std::env::var("TFS_STATIC").unwrap_or("static".to_string());
 	let upload_files_root = std::env::var("TFS_UPLOAD").unwrap_or("./upload".to_string());
@@ -102,10 +130,15 @@ async fn main() -> std::io::Result<()> {
 	let bindaddr = std::env::var("TFS_BIND_ADDR").unwrap_or("127.0.0.1:8080".to_string());
 	HttpServer::new(move || {
 		App::new()
+			.wrap(aw::middleware::Logger::new("%a \"%r\" %s %b %T"))
 			.service(actix_files::Files::new("/static", &static_files_root))
 			.service(
-				// List all endpoints here.
-				web::scope("api").service(hello).service(upload),
+				web::scope("api")
+					.service(hello)
+					.service(upload_post)
+					.service(upload_get)
+					// no update; file should be immutable
+					.service(upload_delete),
 			)
 	})
 	.bind(bindaddr)?
