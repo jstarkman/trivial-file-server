@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<style>
+form.aligned-form {
+	display: grid;
+	grid-template-columns: max-content max-content;
+	gap: 5px;
+}
+form.aligned-form label {
+	text-align: right;
+}
+</style>
+</head>
+
+<body>
+<h1>Upload file here</h1>
+<form method="POST" action="/api/upload" enctype="multipart/form-data" class="aligned-form">
+	<label for="identifier">Identifier</label>
+	<input type="text" name="identifier"/>
+	<label for="f">File to upload</label>
+	<input type="file" name="f" >
+	<input type="submit" value="Upload"/>
+</form>
+</body>
+</html>
